@@ -23,7 +23,16 @@ load_dotenv()
 # Config
 # ---------------------------------------------------------------------------
 
-DB_PATH = os.environ.get("DB_PATH", "app.db")
+DB_PATH = os.environ.get("DB_PATH", "")
+if not DB_PATH:
+    # Vercel's serverless filesystem is read-only except for /tmp, and
+    # /tmp is wiped between cold starts (each new container starts empty).
+    # This means chat history on Vercel is NOT permanently persisted -
+    # it survives only as long as the same warm container is reused. For
+    # a durable production deployment, point DB_PATH at a real database
+    # (e.g. swap sqlite3 calls here for a hosted Postgres/Turso/etc.) -
+    # this default just keeps the app from crashing on Vercel.
+    DB_PATH = os.path.join(tempfile.gettempdir(), "app.db") if os.environ.get("VERCEL") else "app.db"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 KNOWLEDGE_FILE = os.environ.get("KNOWLEDGE_FILE", os.path.join("data", "knowledge.txt"))
 
@@ -40,27 +49,136 @@ if GROQ_API_KEY:
     _groq_client = Groq(api_key=GROQ_API_KEY)
 
 # Map ISO-639-1 codes returned by Whisper to BCP-47 tags usable by the
-# browser's speechSynthesis API for text-to-speech output.
+# browser's speechSynthesis API for text-to-speech output. Only languages
+# where the plain 2-letter code isn't a good enough tag on its own (or
+# where we want a specific region) need an entry here - see
+# bcp47_for_lang() below, which falls back to the bare code for anything
+# not listed, so *any* language Whisper detects gets a usable tag instead
+# of silently defaulting to English.
 LANG_TO_BCP47 = {
     "en": "en-IN", "hi": "hi-IN", "te": "te-IN", "ta": "ta-IN", "kn": "kn-IN",
     "ml": "ml-IN", "mr": "mr-IN", "bn": "bn-IN", "gu": "gu-IN", "pa": "pa-IN",
     "ur": "ur-IN", "or": "or-IN", "as": "as-IN",
 }
+
+
+def bcp47_for_lang(lang_code):
+    """Returns a BCP-47 tag for the browser's speechSynthesis API for any
+    language code Whisper can return - not just the handful of Indian
+    languages this project was originally built around. Falls back to the
+    bare 2-letter code (e.g. "fr", "ja", "de") when we don't have a more
+    specific region tag on file; browsers match that to whatever voice
+    they have installed for that language, so speech still comes out in
+    the right language even without a curated entry."""
+    code = (lang_code or "en")[:2].lower()
+    return LANG_TO_BCP47.get(code, code)
+
+
+# Used to build a natural-language instruction for the Groq translation
+# step ("Translate into {name}"). Not exhaustive - for a code not listed
+# here we just pass the raw code through, which current Groq chat models
+# still understand fine (e.g. "Translate into ja").
 LANG_NAMES = {
     "en": "English", "hi": "Hindi", "te": "Telugu", "ta": "Tamil", "kn": "Kannada",
     "ml": "Malayalam", "mr": "Marathi", "bn": "Bengali", "gu": "Gujarati",
     "pa": "Punjabi", "ur": "Urdu", "or": "Odia", "as": "Assamese",
+    "fr": "French", "de": "German", "es": "Spanish", "pt": "Portuguese",
+    "it": "Italian", "nl": "Dutch", "ru": "Russian", "zh": "Chinese",
+    "ja": "Japanese", "ko": "Korean", "ar": "Arabic", "tr": "Turkish",
+    "vi": "Vietnamese", "th": "Thai", "id": "Indonesian", "ms": "Malay",
+    "fa": "Persian", "pl": "Polish", "uk": "Ukrainian", "sw": "Swahili",
+    "ne": "Nepali", "si": "Sinhala", "my": "Burmese", "he": "Hebrew",
+    "el": "Greek", "sv": "Swedish", "fi": "Finnish", "no": "Norwegian",
+    "da": "Danish", "cs": "Czech", "ro": "Romanian", "hu": "Hungarian",
 }
 
-# espeak-ng voice codes used for offline, on-server text-to-speech for the
-# ESP32 device (no internet-dependent TTS service required). espeak-ng
-# ships with Hindi, Tamil, Telugu, etc. voices out of the box.
-ESPEAK_VOICE_MAP = {
-    "en": "en-us", "hi": "hi", "ta": "ta", "te": "te", "kn": "kn",
-    "ml": "ml", "mr": "mr", "bn": "bn", "gu": "gu", "pa": "pa", "ur": "ur",
-}
+# ---------------------------------------------------------------------------
+# espeak-ng voices - built dynamically from `espeak-ng --voices` so the
+# ESP32 device can be spoken to in essentially any language espeak-ng
+# ships a voice for (100+), not just a hand-picked shortlist. A small
+# curated override map is kept below for cases where we want a specific
+# variant (e.g. American rather than Caribbean/British English).
+# ---------------------------------------------------------------------------
 
 ESPEAK_BIN = shutil.which("espeak-ng") or shutil.which("espeak")
+
+# Curated overrides: checked before the dynamically-discovered voice list,
+# so these specific variants always win regardless of what espeak-ng's
+# "Other Languages" priority table would otherwise pick.
+ESPEAK_VOICE_MAP = {
+    "en": "en-us",
+}
+
+
+def _load_espeak_voice_map():
+    """Parses `espeak-ng --voices` into {language_code: voice_identifier}
+    covering every language and every alias espeak-ng knows about (its
+    "Other Languages" column), e.g. "zh" -> the Mandarin voice, "cmn" ->
+    the same voice, etc. Returns {} if espeak-ng isn't installed or the
+    output can't be parsed - callers fall back to English in that case."""
+    if not ESPEAK_BIN:
+        return {}
+    try:
+        output = subprocess.run(
+            [ESPEAK_BIN, "--voices"], capture_output=True, text=True,
+            timeout=10, check=True,
+        ).stdout
+    except Exception:
+        return {}
+
+    # best[code] = (priority, voice_identifier); lower priority number =
+    # better match, matching espeak-ng's own "Other Languages" ranking.
+    best = {}
+    for line in output.splitlines()[1:]:
+        # Columns: Pty  Language  Age/Gender  VoiceName  File  [Other Languages]
+        parts = line.split(None, 5)
+        if len(parts) < 2:
+            continue
+        identifier = parts[1].strip()
+        if not identifier:
+            continue
+
+        def _consider(code, priority):
+            code = code.lower()
+            if code not in best or priority < best[code][0]:
+                best[code] = (priority, identifier)
+
+        _consider(identifier, 0)
+        # Fall back to a bare primary-language guess (e.g. register "fr"
+        # from "fr-be") only as a weak default - real priorities from the
+        # "Other Languages" column below (e.g. "fr-fr" explicitly listing
+        # "(fr 5)") should always win over this guess.
+        _consider(identifier.split("-")[0], 50)
+
+        if len(parts) == 6:
+            for alias_code, alias_priority in re.findall(r"\(([\w-]+)\s+(\d+)\)", parts[5]):
+                _consider(alias_code, int(alias_priority))
+
+    return {code: ident for code, (_, ident) in best.items()}
+
+
+_ESPEAK_VOICES = _load_espeak_voice_map()
+
+
+def espeak_voice_for_lang(lang_code):
+    """Picks the best espeak-ng voice identifier for a language code,
+    checking (in order): the curated override map, an exact match in the
+    dynamically discovered voice list, a match on just the primary
+    2-letter code, then finally falling back to American English so
+    synthesis always produces *something* rather than failing outright."""
+    code = (lang_code or "en").strip().lower()
+    two_letter = code[:2]
+
+    if code in ESPEAK_VOICE_MAP:
+        return ESPEAK_VOICE_MAP[code]
+    if two_letter in ESPEAK_VOICE_MAP:
+        return ESPEAK_VOICE_MAP[two_letter]
+    if code in _ESPEAK_VOICES:
+        return _ESPEAK_VOICES[code]
+    if two_letter in _ESPEAK_VOICES:
+        return _ESPEAK_VOICES[two_letter]
+    return "en-us"
+
 
 # ---------------------------------------------------------------------------
 # Database
@@ -372,17 +490,27 @@ def espeak_available():
     return ESPEAK_BIN is not None
 
 
+def espeak_language_count():
+    """Number of distinct language codes espeak-ng can currently speak
+    (including aliases) - surfaced on /esp/health mainly so it's easy to
+    confirm at a glance that the dynamic voice list actually loaded."""
+    return len(_ESPEAK_VOICES)
+
+
 def synthesize_speech(text, lang_code, out_wav_path, speed_wpm=155):
     """Synthesises `text` into a 16-bit PCM WAV file at `out_wav_path` using
-    espeak-ng. Raises RuntimeError if espeak-ng is not installed on the
-    server, or CalledProcessError if synthesis fails."""
+    espeak-ng, in whatever language `lang_code` is (any language espeak-ng
+    ships a voice for - see espeak_voice_for_lang() above). Raises
+    RuntimeError if espeak-ng is not installed on the server, or
+    CalledProcessError if synthesis fails."""
     if not ESPEAK_BIN:
         raise RuntimeError(
             "espeak-ng is not installed on the server. Install it with "
             "'sudo apt-get install espeak-ng' (Debian/Ubuntu) or the "
             "equivalent for your OS."
         )
-    voice = ESPEAK_VOICE_MAP.get((lang_code or "en")[:2], "en-us")
+    voice = espeak_voice_for_lang(lang_code)
+    print(f"[modl] synthesize_speech: lang={lang_code!r} -> espeak voice={voice!r}")
 
     # Write text to a temp file rather than passing it as a CLI argument, to
     # avoid shell-escaping and encoding issues with non-Latin scripts.
