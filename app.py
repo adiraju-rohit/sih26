@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import tempfile
 
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from dotenv import load_dotenv
@@ -12,8 +13,15 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "26088-dev-secret")
 
-UPLOAD_DIR = "uploads"
-ESP_AUDIO_DIR = "esp_audio"
+# Vercel's serverless functions can only write to /tmp - every other path
+# is a read-only filesystem, and writing to "uploads"/"esp_audio" (relative
+# to the working directory) is exactly what was crashing the function
+# there. Detect Vercel (it sets VERCEL=1 automatically) and use /tmp; keep
+# plain local folders for normal local/self-hosted runs.
+_ON_VERCEL = bool(os.environ.get("VERCEL"))
+_BASE_DIR = tempfile.gettempdir() if _ON_VERCEL else "."
+UPLOAD_DIR = os.path.join(_BASE_DIR, "uploads")
+ESP_AUDIO_DIR = os.path.join(_BASE_DIR, "esp_audio")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(ESP_AUDIO_DIR, exist_ok=True)
 
@@ -128,7 +136,7 @@ def api_voice_message():
 
     last_id = modl.add_message(CHAT_USER, "assistant", answer_translated, lang, source="web")
 
-    speech_lang = modl.LANG_TO_BCP47.get(lang[:2], "en-IN")
+    speech_lang = modl.bcp47_for_lang(lang)
 
     return jsonify({
         "ok": True,
@@ -168,7 +176,8 @@ def esp_health():
     if not _check_esp_auth():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     return jsonify({"ok": True, "groq_configured": bool(modl.GROQ_API_KEY),
-                     "tts_available": modl.espeak_available()})
+                     "tts_available": modl.espeak_available(),
+                     "tts_languages": modl.espeak_language_count()})
 
 
 def _cleanup_esp_audio(max_age_seconds=600):
@@ -290,12 +299,16 @@ def esp_transcribe():
 def esp_answer():
     """Body: JSON {text_english, lang}. Runs retrieval + answer generation,
     translates the answer back, synthesises it to a WAV file with espeak-ng,
-    and returns a URL the device can GET to stream the audio."""
+    and returns a URL the device can GET to stream the audio.
+
+    IMPORTANT: the Groq answer generation step (and storing the answer so
+    it shows up on the web page) must NOT depend on espeak-ng being
+    installed. Text-to-speech is a separate, optional last step - if it's
+    missing or fails, the device still gets back the answer text (and can
+    show/skip audio gracefully) instead of the whole request failing
+    before Groq is ever even called."""
     if not _check_esp_auth():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
-    if not modl.espeak_available():
-        return jsonify({"ok": False, "error": "espeak-ng is not installed on the server."}), 500
 
     data = request.get_json(force=True, silent=True) or {}
     text_english = (data.get("text_english") or "").strip()
@@ -303,29 +316,60 @@ def esp_answer():
     if not text_english:
         return jsonify({"ok": False, "error": "Missing text_english."}), 400
 
-    _cleanup_esp_audio()
+    try:
+        history = modl.get_messages(CHAT_USER)
+        answer_en = modl.answer_query(text_english, history)
+        answer_translated = modl.translate_text(answer_en, lang)
+    except Exception as e:
+        # answer_query()/translate_text() already catch Groq-specific
+        # errors internally and return a friendly string instead of
+        # raising, so getting here means something unexpected (e.g. the
+        # database file itself is unwritable) - log it server-side and
+        # tell the device plainly rather than returning an HTML 500 page
+        # that the ESP32's JSON parser can't make sense of.
+        app.logger.exception("esp_answer: failed generating an answer")
+        return jsonify({"ok": False, "error": f"Failed to generate an answer: {e}"}), 500
 
-    history = modl.get_messages(CHAT_USER)
-    answer_en = modl.answer_query(text_english, history)
-    answer_translated = modl.translate_text(answer_en, lang)
+    # Store + expose the answer immediately - this is what makes it show
+    # up on the web chat page, independent of whether speech synthesis
+    # below succeeds.
     modl.add_message(CHAT_USER, "assistant", answer_translated, lang, source="esp32")
 
-    audio_id = f"{uuid.uuid4()}.wav"
-    audio_path = os.path.join(ESP_AUDIO_DIR, audio_id)
-    try:
-        modl.synthesize_speech(answer_translated, lang, audio_path)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Speech synthesis failed: {e}"}), 500
+    audio_url = None
+    tts_error = None
+    if not modl.espeak_available():
+        tts_error = ("espeak-ng is not installed on the server, so the answer "
+                     "can't be spoken - see README.md. The text answer was "
+                     "still generated and saved.")
+        app.logger.warning("esp_answer: %s", tts_error)
+    else:
+        _cleanup_esp_audio()
+        audio_id = f"{uuid.uuid4()}.wav"
+        audio_path = os.path.join(ESP_AUDIO_DIR, audio_id)
+        try:
+            modl.synthesize_speech(answer_translated, lang, audio_path)
+            audio_url = f"/esp/audio/{audio_id}"
+        except Exception as e:
+            tts_error = f"Speech synthesis failed: {e}"
+            app.logger.exception("esp_answer: speech synthesis failed")
 
     return jsonify({
         "ok": True,
         "answer_text": answer_translated,
-        "audio_url": f"/esp/audio/{audio_id}",
+        "audio_url": audio_url,   # null if TTS wasn't available/failed
+        "tts_error": tts_error,   # null on success
     })
 
 
 @app.route("/esp/audio/<filename>")
 def esp_audio(filename):
+    # Note for serverless (Vercel) deployments: /tmp is per-container and
+    # not shared, so if the GET here lands on a different container than
+    # the one that wrote the file in /esp/answer, this 404s. This is a
+    # known limitation of running the ESP32 hardware flow on Vercel - see
+    # README.md "Deploying to Vercel" for details and the recommended
+    # workaround (self-host the server for the physical device, or move
+    # audio storage to a real object store / return it inline as base64).
     if not _check_esp_auth():
         abort(401)
     safe_name = os.path.basename(filename)
