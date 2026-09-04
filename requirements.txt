@@ -1,2 +1,4 @@
-Flask
+Flask>=3.0
+python-dotenv>=1.0
+groq>=0.11.0
 gunicorn
