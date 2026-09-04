@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>26088</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root{
+    --sky:#0ea5e9;
+    --sky-dark:#0284c7;
+    --sky-light:#e0f2fe;
+    --bg:#f8fafc;
+    --card:#ffffff;
+    --border:#dbeafe;
+    --text:#1e293b;
+    --muted:#64748b;
+    --error:#dc2626;
+    --rec:#ef4444;
+  }
+  html,body{
+    height:100%;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;
+    overflow:hidden;
+  }
+  .app{
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* header */
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 18px;
+    background:var(--card);
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand img{ width:32px; height:32px; object-fit:contain; }
+  .brand span{ font-size:1.15rem; font-weight:700; color:var(--sky-dark); }
+  .header-actions{ display:flex; align-items:center; gap:14px; }
+  .header-actions button{
+    background:none;
+    border:1px solid var(--border);
+    color:var(--muted);
+    font-size:0.82rem;
+    padding:7px 12px;
+    border-radius:7px;
+    cursor:pointer;
+  }
+  .header-actions button:hover{ border-color:var(--sky); color:var(--sky-dark); }
+
+  /* messages */
+  main{
+    flex:1;
+    overflow-y:auto;
+    padding:18px 14px 10px;
+  }
+  .msg-row{ display:flex; margin-bottom:14px; }
+  .msg-row.user{ justify-content:flex-end; }
+  .bubble{
+    max-width:78%;
+    padding:11px 15px;
+    border-radius:14px;
+    font-size:0.96rem;
+    line-height:1.45;
+    white-space:pre-wrap;
+    word-wrap:break-word;
+  }
+  .msg-row.user .bubble{
+    background:var(--sky);
+    color:#fff;
+    border-bottom-right-radius:4px;
+  }
+  .msg-row.assistant .bubble{
+    background:var(--card);
+    color:var(--text);
+    border:1px solid var(--border);
+    border-bottom-left-radius:4px;
+  }
+  .src-tag{
+    display:inline-block;
+    margin-left:8px;
+    font-size:0.68rem;
+    font-weight:700;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+    color:var(--sky-dark);
+    background:var(--sky-light);
+    border-radius:5px;
+    padding:1px 6px;
+    vertical-align:middle;
+  }
+  .msg-row.user .bubble .src-tag{
+    color:#fff;
+    background:rgba(255,255,255,0.25);
+  }
+  .empty-state{
+    text-align:center;
+    color:var(--muted);
+    font-size:0.92rem;
+    margin-top:40px;
+    padding:0 20px;
+    line-height:1.6;
+  }
+
+  /* input / controls */
+  .controls{
+    flex-shrink:0;
+    background:var(--card);
+    border-top:1px solid var(--border);
+    padding:12px 14px;
+  }
+  .status-line{
+    text-align:center;
+    font-size:0.82rem;
+    color:var(--muted);
+    min-height:18px;
+    margin-bottom:8px;
+  }
+  .status-line.recording{ color:var(--rec); font-weight:600; }
+  .status-line.error{ color:var(--error); }
+
+  .mic-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+  }
+  #micBtn{
+    width:64px;
+    height:64px;
+    border-radius:50%;
+    border:none;
+    background:var(--sky);
+    color:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    box-shadow:0 3px 10px rgba(14,165,233,0.35);
+    transition:transform .1s, background .15s;
+    user-select:none;
+    touch-action:none;
+  }
+  #micBtn svg{ width:26px; height:26px; }
+  #micBtn.active{
+    background:var(--rec);
+    transform:scale(1.08);
+    box-shadow:0 3px 14px rgba(239,68,68,0.4);
+  }
+  .mic-hint{
+    font-size:0.78rem;
+    color:var(--muted);
+    text-align:center;
+    margin-top:8px;
+  }
+
+  .text-row{
+    display:flex;
+    gap:8px;
+    margin-top:12px;
+  }
+  .text-row input{
+    flex:1;
+    padding:10px 13px;
+    font-size:0.95rem;
+    border:1px solid #cbd5e1;
+    border-radius:8px;
+    outline:none;
+  }
+  .text-row input:focus{
+    border-color:var(--sky);
+    box-shadow:0 0 0 3px rgba(14,165,233,0.15);
+  }
+  .text-row button{
+    padding:10px 16px;
+    background:var(--sky);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    font-size:0.9rem;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .text-row button:hover{ background:var(--sky-dark); }
+
+  footer{
+    text-align:center;
+    padding:8px;
+    font-size:0.74rem;
+    color:var(--muted);
+    background:var(--card);
+    border-top:1px solid var(--border);
+    flex-shrink:0;
+  }
+
+  @media (max-width:480px){
+    .brand span{ font-size:1.05rem; }
+    .bubble{ max-width:86%; font-size:0.92rem; }
+    #micBtn{ width:58px; height:58px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="26088 logo">
+      <span>26088</span>
+    </div>
+    <div class="header-actions">
+      <button id="clearBtn" type="button">Clear</button>
+    </div>
+  </header>
+
+  <main id="chatMain" data-last-id="{{ messages[-1].id if messages else 0 }}">
+    {% if not messages %}
+    <div class="empty-state" id="emptyState">
+      Hold the microphone button, or press and hold the S key, to ask about
+      cooperative governance, legal provisions, schemes, and member services.
+      Release to send. Speak in any supported language. Questions asked on
+      the physical ESP32 device show up here too, and vice versa.
+    </div>
+    {% endif %}
+    {% for m in messages %}
+      <div class="msg-row {{ 'user' if m.role == 'user' else 'assistant' }}">
+        <div class="bubble">
+          {{ m.text }}
+          {% if m.source == 'esp32' %}<span class="src-tag">device</span>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </main>
+
+  <div class="controls">
+    <div class="status-line" id="statusLine">Hold the button or the S key to speak</div>
+    <div class="mic-row">
+      <button id="micBtn" type="button" aria-label="Hold to speak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="mic-hint">Voice input is multilingual. Text input below always uses English.</div>
+
+    <form class="text-row" id="textForm">
+      <input type="text" id="textInput" placeholder="Or type a question in English" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <footer>by Team Arya</footer>
+</div>
+
+<script>
+const chatMain   = document.getElementById('chatMain');
+const emptyState = document.getElementById('emptyState');
+const micBtn     = document.getElementById('micBtn');
+const statusLine = document.getElementById('statusLine');
+const textForm   = document.getElementById('textForm');
+const textInput  = document.getElementById('textInput');
+const clearBtn   = document.getElementById('clearBtn');
+
+function addBubble(role, text, source) {
+  if (emptyState) emptyState.remove();
+  const row = document.createElement('div');
+  row.className = 'msg-row ' + role;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.appendChild(document.createTextNode(text));
+  if (source === 'esp32') {
+    const tag = document.createElement('span');
+    tag.className = 'src-tag';
+    tag.textContent = 'device';
+    bubble.appendChild(tag);
+  }
+  row.appendChild(bubble);
+  chatMain.appendChild(row);
+  chatMain.scrollTop = chatMain.scrollHeight;
+  return bubble;
+}
+
+function setStatus(text, kind) {
+  statusLine.textContent = text;
+  statusLine.className = 'status-line' + (kind ? ' ' + kind : '');
+}
+
+function speak(text, lang) {
+  if (!('speechSynthesis' in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang || 'en-IN';
+  window.speechSynthesis.speak(utter);
+}
+
+/* ---------------- text fallback ---------------- */
+textForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = textInput.value.trim();
+  if (!text) return;
+  textInput.value = '';
+  addBubble('user', text);
+  setStatus('Thinking...');
+  try {
+    const res = await fetch('/api/text_message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      addBubble('assistant', data.answer);
+      if (data.last_id) lastMessageId = Math.max(lastMessageId, data.last_id);
+      speak(data.answer, data.speech_lang);
+      setStatus('Hold the button or the S key to speak');
+    } else {
+      setStatus(data.error || 'Something went wrong.', 'error');
+    }
+  } catch (err) {
+    setStatus('Network error. Please try again.', 'error');
+  }
+});
+
+/* ---------------- clear ---------------- */
+clearBtn.addEventListener('click', async () => {
+  await fetch('/api/clear', { method: 'POST' });
+  window.location.reload();
+});
+
+/* ---------------- poll for messages from the ESP32 device ----------------
+   The browser and the physical device share one conversation. Whenever the
+   device asks a question with its own microphone, this poll picks up both
+   the question and its answer and drops them into the chat here too. */
+let lastMessageId = parseInt(chatMain.dataset.lastId || '0', 10) || 0;
+let pollInFlight = false;
+
+async function pollMessages() {
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    const res = await fetch('/api/messages?after_id=' + lastMessageId);
+    const data = await res.json();
+    if (data.ok && data.messages && data.messages.length) {
+      for (const m of data.messages) {
+        addBubble(m.role === 'user' ? 'user' : 'assistant', m.text, m.source);
+        lastMessageId = Math.max(lastMessageId, m.id);
+      }
+    }
+  } catch (err) {
+    // Silently ignore - the next poll will retry.
+  } finally {
+    pollInFlight = false;
+  }
+}
+setInterval(pollMessages, 3000);
+
+/* ---------------- push-to-talk voice recording ---------------- */
+let mediaRecorder = null;
+let audioChunks = [];
+let recording = false;
+let stream = null;
+
+async function startRecording() {
+  if (recording) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus('Microphone is not supported on this device.', 'error');
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    setStatus('Microphone permission was denied.', 'error');
+    return;
+  }
+  audioChunks = [];
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+  mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = onRecordingStop;
+  mediaRecorder.start();
+  recording = true;
+  micBtn.classList.add('active');
+  setStatus('Listening... release to send', 'recording');
+}
+
+function stopRecording() {
+  if (!recording) return;
+  recording = false;
+  micBtn.classList.remove('active');
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+}
+
+async function onRecordingStop() {
+  if (!audioChunks.length) {
+    setStatus('Hold the button or the S key to speak');
+    return;
+  }
+  const blob = new Blob(audioChunks, { type: audioChunks[0].type || 'audio/webm' });
+  audioChunks = [];
+
+  if (blob.size < 800) {
+    setStatus('Recording was too short. Try again.', 'error');
+    return;
+  }
+
+  setStatus('Processing speech...');
+  const formData = new FormData();
+  formData.append('audio', blob, 'speech.webm');
+
+  try {
+    const res = await fetch('/api/voice_message', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.ok) {
+      addBubble('user', data.user_text);
+      addBubble('assistant', data.answer);
+      if (data.last_id) lastMessageId = Math.max(lastMessageId, data.last_id);
+      speak(data.answer, data.speech_lang);
+      setStatus('Hold the button or the S key to speak');
+    } else {
+      setStatus(data.error || 'Could not process the recording.', 'error');
+    }
+  } catch (err) {
+    setStatus('Network error. Please try again.', 'error');
+  }
+}
+
+/* mouse / touch on the mic button */
+micBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startRecording(); });
+micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); }, { passive: false });
+['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(evt => {
+  micBtn.addEventListener(evt, (e) => { e.preventDefault(); stopRecording(); });
+});
+
+/* hold the S key */
+let sKeyDown = false;
+window.addEventListener('keydown', (e) => {
+  if ((e.key === 's' || e.key === 'S') && !sKeyDown && document.activeElement !== textInput) {
+    sKeyDown = true;
+    startRecording();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === 's' || e.key === 'S') {
+    sKeyDown = false;
+    stopRecording();
+  }
+});
+
+chatMain.scrollTop = chatMain.scrollHeight;
+</script>
+</body>
+</html>
