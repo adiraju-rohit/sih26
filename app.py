@@ -38,6 +38,26 @@ CHAT_USER = "shared"
 modl.init_db()
 
 
+@app.errorhandler(Exception)
+def handle_uncaught_exception(e):
+    """Last-resort safety net. Every route below already wraps its own
+    Groq/DB/TTS calls in try/except and returns a proper JSON error, but if
+    something unexpected still slips through (e.g. a bad request from a
+    client, a dependency raising something unforeseen), this makes sure the
+    response is still valid JSON the caller (browser JS or the ESP32's
+    JSON parser) can handle, instead of the request just crashing silently
+    with no visible error - which is what made the "no output at all"
+    symptom so hard to see: the request was failing, but nothing surfaced
+    that failure anywhere."""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        # Preserve normal 404/401/etc responses (e.g. abort(404) in
+        # /esp/audio/<filename>) instead of masking them as a 500.
+        return e
+    app.logger.exception("Unhandled exception")
+    return jsonify({"ok": False, "error": f"Internal server error: {e}"}), 500
+
+
 @app.route("/health")
 def health():
     """Lightweight, unauthenticated reachability check. The ESP32 polls
