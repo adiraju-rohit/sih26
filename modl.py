@@ -23,18 +23,35 @@ load_dotenv()
 # Config
 # ---------------------------------------------------------------------------
 
-DB_PATH = os.environ.get("DB_PATH", "")
-if not DB_PATH:
-    # Vercel's serverless filesystem is read-only except for /tmp, and
-    # /tmp is wiped between cold starts (each new container starts empty).
-    # This means chat history on Vercel is NOT permanently persisted -
-    # it survives only as long as the same warm container is reused. For
-    # a durable production deployment, point DB_PATH at a real database
-    # (e.g. swap sqlite3 calls here for a hosted Postgres/Turso/etc.) -
-    # this default just keeps the app from crashing on Vercel.
-    DB_PATH = os.path.join(tempfile.gettempdir(), "app.db") if os.environ.get("VERCEL") else "app.db"
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_ON_VERCEL = bool(os.environ.get("VERCEL"))
+
+# On Vercel, EVERY path except /tmp is read-only, and that's not
+# durable storage anyway (see the "Deploying to Vercel" section of
+# README.md) - so on Vercel we always force the database into /tmp,
+# full stop, regardless of what DB_PATH is set to. This matters because
+# it's easy to end up with a non-empty DB_PATH env var on Vercel without
+# meaning to (e.g. copying the local .env's "DB_PATH=app.db" straight
+# into the Vercel dashboard's Environment Variables). Previously that
+# silently overrode the safe /tmp fallback below, sqlite3.connect() then
+# tried to open a file on the read-only filesystem, and the whole
+# function crashed on every single request (including the ESP32's
+# /esp/answer, which is why nothing ever came out of the speaker or
+# showed up on the web page either - the request never completed).
+if _ON_VERCEL:
+    DB_PATH = os.path.join(tempfile.gettempdir(), "app.db")
+else:
+    DB_PATH = os.environ.get("DB_PATH", "") or "app.db"
+
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-KNOWLEDGE_FILE = os.environ.get("KNOWLEDGE_FILE", os.path.join("data", "knowledge.txt"))
+
+# Resolved relative to this file (not the process's current working
+# directory) so it works the same locally and on Vercel, where the cwd a
+# serverless function starts in isn't guaranteed to be the project root.
+KNOWLEDGE_FILE = os.environ.get("KNOWLEDGE_FILE") or os.path.join(_BASE_DIR, "data", "knowledge.txt")
+if not os.path.isabs(KNOWLEDGE_FILE):
+    KNOWLEDGE_FILE = os.path.join(_BASE_DIR, KNOWLEDGE_FILE)
 
 # Current (non-deprecated) Groq model ids.
 # llama-3.1-8b-instant / llama-3.3-70b-versatile were retired by Groq -
@@ -45,8 +62,17 @@ STT_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3")
 
 _groq_client = None
 if GROQ_API_KEY:
-    from groq import Groq
-    _groq_client = Groq(api_key=GROQ_API_KEY)
+    try:
+        from groq import Groq
+        _groq_client = Groq(api_key=GROQ_API_KEY)
+    except Exception as e:
+        # Never let a bad/missing key, a network hiccup during client
+        # construction, or an incompatible groq-sdk version take down the
+        # entire app at import time - fall back to "not configured" and
+        # let answer_query()/transcribe_and_translate() report the error
+        # per-request instead.
+        print(f"[modl] WARNING: failed to initialize Groq client: {e}")
+        _groq_client = None
 
 # Map ISO-639-1 codes returned by Whisper to BCP-47 tags usable by the
 # browser's speechSynthesis API for text-to-speech output. Only languages
@@ -157,7 +183,11 @@ def _load_espeak_voice_map():
     return {code: ident for code, (_, ident) in best.items()}
 
 
-_ESPEAK_VOICES = _load_espeak_voice_map()
+try:
+    _ESPEAK_VOICES = _load_espeak_voice_map()
+except Exception as e:
+    print(f"[modl] WARNING: failed to load espeak-ng voice list: {e}")
+    _ESPEAK_VOICES = {}
 
 
 def espeak_voice_for_lang(lang_code):
@@ -191,18 +221,26 @@ def get_conn():
 
 
 def init_db():
-    conn = get_conn()
-    conn.execute("""CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL,
-        role TEXT NOT NULL,
-        text TEXT NOT NULL,
-        lang TEXT NOT NULL DEFAULT 'en',
-        source TEXT NOT NULL DEFAULT 'web',
-        ts INTEGER NOT NULL DEFAULT 0)""")
-    conn.commit()
-    conn.close()
-    _ensure_source_column(conn)
+    try:
+        conn = get_conn()
+        conn.execute("""CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            role TEXT NOT NULL,
+            text TEXT NOT NULL,
+            lang TEXT NOT NULL DEFAULT 'en',
+            source TEXT NOT NULL DEFAULT 'web',
+            ts INTEGER NOT NULL DEFAULT 0)""")
+        conn.commit()
+        conn.close()
+        _ensure_source_column()
+    except Exception as e:
+        # Don't let a DB problem take the whole app down at import time -
+        # every route that touches the DB will still fail (and report why
+        # via its own try/except), but at least routes that don't (like
+        # /health) keep working, and the crash is visible in the server
+        # logs instead of being an opaque "FUNCTION_INVOCATION_FAILED".
+        print(f"[modl] WARNING: init_db() failed (DB_PATH={DB_PATH!r}): {e}")
 
 
 def _ensure_source_column(_conn_unused=None):
@@ -353,7 +391,12 @@ class KnowledgeBase:
         return [self.chunks[i] for _, i in scores[:top_k]]
 
 
-_kb = KnowledgeBase(KNOWLEDGE_FILE)
+try:
+    _kb = KnowledgeBase(KNOWLEDGE_FILE)
+except Exception as e:
+    print(f"[modl] WARNING: failed to load knowledge base from {KNOWLEDGE_FILE!r}: {e}")
+    _kb = KnowledgeBase.__new__(KnowledgeBase)
+    _kb.path, _kb.chunks, _kb._doc_freq, _kb._chunk_vectors = KNOWLEDGE_FILE, [], Counter(), []
 
 
 def kb_context(query, top_k=3):
