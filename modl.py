@@ -438,7 +438,7 @@ def answer_query(question_en, history=None):
 
     system_prompt = (
         "You are a helpful voice assistant. Use web search to find "
-        "accurate, current information whenever it would improve your "
+        "accurate, current information only about cooperative laws, government schemes, PACS services, crop insurance schemes, financial literacy, grievance redressal mechanisms, cooperative governance, legal provisions, member services, and related things for rural farmers and stakeholders in India whenever it would improve your "
         "answer - for facts, prices, schedules, news, or anything that "
         "could have changed or that you're not certain about - then "
         "answer the question directly using what you find. "
