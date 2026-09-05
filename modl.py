@@ -412,6 +412,80 @@ def transcribe_and_translate(audio_path):
     }
 
 
+def detect_and_translate_text(text):
+    """Text-input equivalent of transcribe_and_translate() above, for
+    typed questions (e.g. the browser's text box) instead of spoken ones.
+    Identifies whether `text` is English, Hindi, or Telugu - the only
+    three supported languages - and translates it into English, so Groq
+    only ever has to search/answer in English regardless of which of the
+    three languages the question was written in.
+
+    Returns the same shape as transcribe_and_translate():
+    {text_original, lang, text_english}.
+    """
+    text_original = (text or "").strip()
+    if not text_original:
+        return {"text_original": "", "lang": "en", "text_english": ""}
+
+    if not _groq_client:
+        # No way to identify/translate without Groq - assume English
+        # rather than failing outright.
+        return {"text_original": text_original, "lang": "en", "text_english": text_original}
+
+    identify_prompt = (
+        "Identify which language the following text is written in. It "
+        "will be English, Hindi, or Telugu - these are the only three "
+        "possibilities, so pick whichever of the three it's closest to "
+        "even if you're not fully sure. Respond with EXACTLY one line, "
+        "nothing else: LANG=en or LANG=hi or LANG=te."
+    )
+    lang = "en"
+    try:
+        resp = _groq_client.chat.completions.create(
+            model=CHAT_MODEL,
+            max_tokens=10,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": identify_prompt},
+                {"role": "user", "content": text_original},
+            ],
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        match = re.search(r"LANG\s*=\s*(\w{2})", raw, re.IGNORECASE)
+        detected_lang_raw = match.group(1) if match else "en"
+        lang = _clamp_lang(detected_lang_raw)
+        if match and detected_lang_raw.lower() != lang:
+            print(f"[modl] detect_and_translate_text: identified {detected_lang_raw!r}, "
+                  f"which isn't one of {sorted(ALLOWED_LANGS)} - treating as English.")
+    except Exception as e:
+        print(f"[modl] WARNING: language identification failed: {e}; assuming English.")
+        lang = "en"
+
+    if lang == "en":
+        return {"text_original": text_original, "lang": "en", "text_english": text_original}
+
+    lang_name = LANG_NAMES[lang]
+    text_english = text_original
+    try:
+        resp = _groq_client.chat.completions.create(
+            model=CHAT_MODEL,
+            max_tokens=500,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": (
+                    f"Translate the following {lang_name} text into English. "
+                    f"Reply with only the translation, nothing else."
+                )},
+                {"role": "user", "content": text_original},
+            ],
+        )
+        text_english = (resp.choices[0].message.content or "").strip() or text_original
+    except Exception as e:
+        print(f"[modl] WARNING: translation to English failed: {e}; using original text as-is.")
+
+    return {"text_original": text_original, "lang": lang, "text_english": text_english}
+
+
 # ---------------------------------------------------------------------------
 # Groq: answer generation grounded in a live web search
 #
