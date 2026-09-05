@@ -40,36 +40,33 @@ if GROQ_API_KEY:
         _groq_client = None
 
 LANG_TO_BCP47 = {
-    "en": "en-IN", "hi": "hi-IN", "te": "te-IN",
+    "en": "en-IN", "hi": "hi-IN", "te": "te-IN", "ta": "ta-IN", "kn": "kn-IN",
+    "ml": "ml-IN", "mr": "mr-IN", "bn": "bn-IN", "gu": "gu-IN", "pa": "pa-IN",
+    "ur": "ur-IN", "or": "or-IN", "as": "as-IN",
 }
 
 
 def bcp47_for_lang(lang_code):
-    return LANG_TO_BCP47[_clamp_lang(lang_code)]
-
+    code = (lang_code or "en")[:2].lower()
+    return LANG_TO_BCP47.get(code, code)
+ 
 LANG_NAMES = {
-    "en": "English", "hi": "Hindi", "te": "Telugu",
+    "en": "English", "hi": "Hindi", "te": "Telugu", "ta": "Tamil", "kn": "Kannada",
+    "ml": "Malayalam", "mr": "Marathi", "bn": "Bengali", "gu": "Gujarati",
+    "pa": "Punjabi", "ur": "Urdu", "or": "Odia", "as": "Assamese",
+    "fr": "French", "de": "German", "es": "Spanish", "pt": "Portuguese",
+    "it": "Italian", "nl": "Dutch", "ru": "Russian", "zh": "Chinese",
+    "ja": "Japanese", "ko": "Korean", "ar": "Arabic", "tr": "Turkish",
+    "vi": "Vietnamese", "th": "Thai", "id": "Indonesian", "ms": "Malay",
+    "fa": "Persian", "pl": "Polish", "uk": "Ukrainian", "sw": "Swahili",
+    "ne": "Nepali", "si": "Sinhala", "my": "Burmese", "he": "Hebrew",
+    "el": "Greek", "sv": "Swedish", "fi": "Finnish", "no": "Norwegian",
+    "da": "Danish", "cs": "Czech", "ro": "Romanian", "hu": "Hungarian",
 }
 
-# The system only supports these three languages end-to-end (speech
-# recognition, translation, and text-to-speech). Anything else Whisper
-# might detect gets clamped to English rather than passed through, so a
-# stray/misdetected language never reaches the translator or TTS step with
-# an unsupported code.
-ALLOWED_LANGS = {"en", "hi", "te"}
-
-
-def _clamp_lang(lang_code):
-    code = (lang_code or "en")[:2].lower()
-    return code if code in ALLOWED_LANGS else "en"
-
 ESPEAK_BIN = shutil.which("espeak-ng") or shutil.which("espeak")
-# Fixed, known-good espeak-ng voice ids for the three supported languages -
-# no need for the dynamic --voices scan below to guess these.
 ESPEAK_VOICE_MAP = {
     "en": "en-us",
-    "hi": "hi",
-    "te": "te",
 }
 
 
@@ -116,16 +113,17 @@ except Exception as e:
 
 
 def espeak_voice_for_lang(lang_code):
-    """Returns the espeak-ng voice id for one of the three supported
-    languages (English, Hindi, Telugu). Anything else is clamped to
-    English first, so this never has to guess at an unsupported voice."""
-    code = _clamp_lang(lang_code)
+    code = (lang_code or "en").strip().lower()
+    two_letter = code[:2]
+
     if code in ESPEAK_VOICE_MAP:
         return ESPEAK_VOICE_MAP[code]
-    # Defensive fallback only - shouldn't normally be reached since
-    # ESPEAK_VOICE_MAP already covers all three supported codes.
+    if two_letter in ESPEAK_VOICE_MAP:
+        return ESPEAK_VOICE_MAP[two_letter]
     if code in _ESPEAK_VOICES:
         return _ESPEAK_VOICES[code]
+    if two_letter in _ESPEAK_VOICES:
+        return _ESPEAK_VOICES[two_letter]
     return "en-us"
 
 def get_conn():
@@ -301,58 +299,6 @@ def kb_context(query, top_k=3):
 
 
 # ---------------------------------------------------------------------------
-# Full-document context for answer_query()
-#
-# The TF-IDF chunk search above (KnowledgeBase.search / kb_context) was
-# originally used to pick just the few most-relevant chunks to send to the
-# model, to keep the prompt small. In practice that similarity search
-# often missed the actual answer (it's just keyword overlap, not real
-# understanding), so the model would say "the reference material doesn't
-# cover this" even when the answer was sitting elsewhere in the file.
-# Instead, answer_query() now sends Groq the ENTIRE knowledge file as
-# context every time, so nothing gets filtered out before the model even
-# sees it. kb_context()/KnowledgeBase.search() are left in place above in
-# case anything else still wants targeted chunk retrieval, but they're no
-# longer used for answering questions.
-# ---------------------------------------------------------------------------
-
-# Safety cap so an unexpectedly huge knowledge file can't blow past the
-# chat model's context window (or make every answer slow/expensive).
-# Override via the MAX_KNOWLEDGE_CHARS env var if your file is bigger and
-# your model can handle it - gpt-oss-120b's context window comfortably
-# fits well beyond this default.
-MAX_KNOWLEDGE_CHARS = int(os.environ.get("MAX_KNOWLEDGE_CHARS", "120000"))
-
-
-def _read_full_knowledge_text():
-    if not os.path.exists(KNOWLEDGE_FILE):
-        return ""
-    try:
-        with open(KNOWLEDGE_FILE, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-    except OSError as e:
-        print(f"[modl] WARNING: failed to read knowledge file {KNOWLEDGE_FILE!r}: {e}")
-        return ""
-
-
-_FULL_KNOWLEDGE_TEXT = _read_full_knowledge_text()
-if len(_FULL_KNOWLEDGE_TEXT) > MAX_KNOWLEDGE_CHARS:
-    print(f"[modl] WARNING: {KNOWLEDGE_FILE} is {len(_FULL_KNOWLEDGE_TEXT)} chars, "
-          f"which is over MAX_KNOWLEDGE_CHARS ({MAX_KNOWLEDGE_CHARS}); truncating "
-          f"what's sent to the model. Raise MAX_KNOWLEDGE_CHARS if your model's "
-          f"context window can fit the whole file.")
-
-
-def reload_knowledge_base():
-    """Re-reads KNOWLEDGE_FILE from disk - call this after editing the
-    file without restarting the server. Refreshes both the full-text copy
-    answer_query() uses and the TF-IDF index kept around for kb_context()."""
-    global _FULL_KNOWLEDGE_TEXT
-    _FULL_KNOWLEDGE_TEXT = _read_full_knowledge_text()
-    _kb.reload()
-
-
-# ---------------------------------------------------------------------------
 # Groq: speech-to-text + translation to English
 # ---------------------------------------------------------------------------
 
@@ -361,17 +307,7 @@ def transcribe_and_translate(audio_path):
     Uses Groq Whisper for transcription (detects source language) and the
     Whisper translation endpoint (always outputs English) as the
     replacement for the unavailable Bhashini speech-to-text + translation
-    pipeline.
-
-    Only English, Hindi, and Telugu are supported. Whisper is constrained
-    to guess one of these three up front via the `language` hint isn't
-    possible (we don't know which of the three was spoken until we ask),
-    so instead we let it auto-detect freely and then clamp the result:
-    anything Whisper reports outside {en, hi, te} is treated as English
-    for every step after this (translation target, TTS voice, OLED
-    language tag), so an occasional misdetection on background noise or
-    an unsupported language never breaks translation or speech synthesis.
-    """
+    pipeline."""
     if not _groq_client:
         raise RuntimeError("GROQ_API_KEY is not configured.")
 
@@ -382,15 +318,9 @@ def transcribe_and_translate(audio_path):
             response_format="verbose_json",
         )
     text_original = (transcription.text or "").strip()
-    detected_lang_raw = getattr(transcription, "language", "en") or "en"
-    detected_lang = _clamp_lang(detected_lang_raw)
+    detected_lang = getattr(transcription, "language", "en") or "en"
 
-    if detected_lang_raw != detected_lang:
-        print(f"[modl] transcribe: Whisper detected {detected_lang_raw!r}, "
-              f"which isn't one of the supported languages {sorted(ALLOWED_LANGS)} "
-              f"- treating as English.")
-
-    if detected_lang == "en":
+    if detected_lang.startswith("en"):
         text_english = text_original
     else:
         with open(audio_path, "rb") as f:
@@ -413,27 +343,20 @@ def transcribe_and_translate(audio_path):
 # ---------------------------------------------------------------------------
 
 def answer_query(question_en, history=None):
-    """Answers an English question using the entire knowledge-base file as
-    context (not just a handful of similarity-matched chunks), so the
-    model actually sees everything before deciding whether the reference
-    material covers the question."""
+    """Answers an English question using retrieved knowledge-base context."""
     if not _groq_client:
         return "The assistant is not configured. Please set GROQ_API_KEY."
 
-    context = _FULL_KNOWLEDGE_TEXT[:MAX_KNOWLEDGE_CHARS]
+    context = kb_context(question_en, top_k=4)
 
     system_prompt = (
         "You are a helpful assistant for members of cooperative societies. "
         "Answer questions about cooperative governance, legal provisions, "
         "government schemes, and member services. "
-        "The complete reference document is provided below in full - read "
-        "all of it carefully before answering, since the relevant answer "
-        "may be anywhere in it, not just near matching keywords. "
-        "Base your answer only on this reference material; only say it "
-        "doesn't cover the question if you've genuinely checked the whole "
-        "document and the topic really isn't addressed anywhere in it - "
-        "in that case say so plainly and give general, cautious guidance. "
-        "Keep answers short, clear, and practical in simple language - 2 to 5 sentences unless "
+        "Base your answer only on the reference material provided; if the "
+        "reference material does not cover the question, say so plainly and "
+        "give general, cautious guidance. "
+        "Keep answers short, clear, and practical in simple language- 2 to 5 sentences unless "
         "the question needs a list. No markdown symbols, no emojis."
     )
 
@@ -446,7 +369,7 @@ def answer_query(question_en, history=None):
         )
 
     user_prompt = (
-        f"Reference document (full text):\n{context}\n\n"
+        f"Reference material:\n{context}\n\n"
         f"Question: {question_en}{hist_ctx}"
     )
 
@@ -466,14 +389,11 @@ def answer_query(question_en, history=None):
 
 
 def translate_text(text, target_lang_code):
-    """Translates English text into the target language using the chat
-    model. Only Hindi and Telugu are supported as translation targets -
-    anything else (including plain "en") is returned unchanged."""
-    target_lang_code = _clamp_lang(target_lang_code)
-    if target_lang_code == "en" or not _groq_client:
+    """Translates English text into the target language using the chat model."""
+    if target_lang_code.startswith("en") or not _groq_client:
         return text
 
-    lang_name = LANG_NAMES[target_lang_code]
+    lang_name = LANG_NAMES.get(target_lang_code[:2], target_lang_code)
     system_prompt = (
         f"Translate the given English text into {lang_name}, using the native "
         f"script for {lang_name}. Reply with only the translation, nothing else."
