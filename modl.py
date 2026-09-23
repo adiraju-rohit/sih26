@@ -30,14 +30,6 @@ if not os.path.isabs(KNOWLEDGE_FILE):
 CHAT_MODEL = os.environ.get("GROQ_CHAT_MODEL", "openai/gpt-oss-120b")
 STT_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3")
 
-# Groq Compound is a system (not a plain chat model) that can decide on its
-# own, server-side, to run a real web search (and read the pages it finds)
-# before answering - no extra API keys, scraping code, or search service
-# of our own required. This is what answer_query() now uses instead of the
-# old "read the whole knowledge.txt file" approach. See
-# https://console.groq.com/docs/compound for details.
-SEARCH_MODEL = os.environ.get("GROQ_SEARCH_MODEL", "groq/compound")
-
 _groq_client = None
 if GROQ_API_KEY:
     try:
@@ -309,15 +301,19 @@ def kb_context(query, top_k=3):
 
 
 # ---------------------------------------------------------------------------
-# Local knowledge.txt document (NO LONGER used by answer_query())
+# Full-document context for answer_query()
 #
-# This project used to answer questions purely from a local knowledge.txt
-# file - first via TF-IDF chunk retrieval (KnowledgeBase.search /
-# kb_context), then later by sending the model the entire file as context.
-# answer_query() now answers using a live Groq Compound web search instead
-# (see below), so neither of those is on the answering path any more.
-# Both are left in place, unused, only in case something else in the app
-# still wants to read/search that local file directly.
+# The TF-IDF chunk search above (KnowledgeBase.search / kb_context) was
+# originally used to pick just the few most-relevant chunks to send to the
+# model, to keep the prompt small. In practice that similarity search
+# often missed the actual answer (it's just keyword overlap, not real
+# understanding), so the model would say "the reference material doesn't
+# cover this" even when the answer was sitting elsewhere in the file.
+# Instead, answer_query() now sends Groq the ENTIRE knowledge file as
+# context every time, so nothing gets filtered out before the model even
+# sees it. kb_context()/KnowledgeBase.search() are left in place above in
+# case anything else still wants targeted chunk retrieval, but they're no
+# longer used for answering questions.
 # ---------------------------------------------------------------------------
 
 # Safety cap so an unexpectedly huge knowledge file can't blow past the
@@ -412,115 +408,33 @@ def transcribe_and_translate(audio_path):
     }
 
 
-def detect_and_translate_text(text):
-    """Text-input equivalent of transcribe_and_translate() above, for
-    typed questions (e.g. the browser's text box) instead of spoken ones.
-    Identifies whether `text` is English, Hindi, or Telugu - the only
-    three supported languages - and translates it into English, so Groq
-    only ever has to search/answer in English regardless of which of the
-    three languages the question was written in.
-
-    Returns the same shape as transcribe_and_translate():
-    {text_original, lang, text_english}.
-    """
-    text_original = (text or "").strip()
-    if not text_original:
-        return {"text_original": "", "lang": "en", "text_english": ""}
-
-    if not _groq_client:
-        # No way to identify/translate without Groq - assume English
-        # rather than failing outright.
-        return {"text_original": text_original, "lang": "en", "text_english": text_original}
-
-    identify_prompt = (
-        "Identify which language the following text is written in. It "
-        "will be English, Hindi, or Telugu - these are the only three "
-        "possibilities, so pick whichever of the three it's closest to "
-        "even if you're not fully sure. Respond with EXACTLY one line, "
-        "nothing else: LANG=en or LANG=hi or LANG=te."
-    )
-    lang = "en"
-    try:
-        resp = _groq_client.chat.completions.create(
-            model=CHAT_MODEL,
-            max_tokens=10,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": identify_prompt},
-                {"role": "user", "content": text_original},
-            ],
-        )
-        raw = (resp.choices[0].message.content or "").strip()
-        match = re.search(r"LANG\s*=\s*(\w{2})", raw, re.IGNORECASE)
-        detected_lang_raw = match.group(1) if match else "en"
-        lang = _clamp_lang(detected_lang_raw)
-        if match and detected_lang_raw.lower() != lang:
-            print(f"[modl] detect_and_translate_text: identified {detected_lang_raw!r}, "
-                  f"which isn't one of {sorted(ALLOWED_LANGS)} - treating as English.")
-    except Exception as e:
-        print(f"[modl] WARNING: language identification failed: {e}; assuming English.")
-        lang = "en"
-
-    if lang == "en":
-        return {"text_original": text_original, "lang": "en", "text_english": text_original}
-
-    lang_name = LANG_NAMES[lang]
-    text_english = text_original
-    try:
-        resp = _groq_client.chat.completions.create(
-            model=CHAT_MODEL,
-            max_tokens=500,
-            temperature=0.2,
-            messages=[
-                {"role": "system", "content": (
-                    f"Translate the following {lang_name} text into English. "
-                    f"Reply with only the translation, nothing else."
-                )},
-                {"role": "user", "content": text_original},
-            ],
-        )
-        text_english = (resp.choices[0].message.content or "").strip() or text_original
-    except Exception as e:
-        print(f"[modl] WARNING: translation to English failed: {e}; using original text as-is.")
-
-    return {"text_original": text_original, "lang": lang, "text_english": text_english}
-
-
 # ---------------------------------------------------------------------------
-# Groq: answer generation grounded in a live web search
-#
-# This used to send the model the entire contents of a local
-# knowledge.txt file as context. It now instead calls "groq/compound" -
-# not a plain chat model but a Groq *system* that can decide on its own to
-# run a real web search (and read the pages it finds) server-side before
-# answering, then folds what it found into a normal chat-completion
-# response. No local document, search API key, or scraping code needed on
-# our end - Groq handles the search, page-reading, and citation-gathering
-# entirely on its side. See https://console.groq.com/docs/compound.
+# Groq: answer generation grounded in the knowledge base
 # ---------------------------------------------------------------------------
 
 def answer_query(question_en, history=None):
-    """Answers an English question by letting Groq Compound search the web
-    for whatever current, accurate information it needs, instead of
-    looking one up in a local file. Falls back to a plain (non-searching)
-    chat completion on CHAT_MODEL if the search-capable model call fails
-    for any reason (e.g. it's briefly unavailable, or not enabled on the
-    account), so the assistant still answers - just without live search
-    that one time."""
+    """Answers an English question using the entire knowledge-base file as
+    context (not just a handful of similarity-matched chunks), so the
+    model actually sees everything before deciding whether the reference
+    material covers the question."""
     if not _groq_client:
         return "The assistant is not configured. Please set GROQ_API_KEY."
 
+    context = _FULL_KNOWLEDGE_TEXT[:MAX_KNOWLEDGE_CHARS]
+
     system_prompt = (
-        "You are a helpful voice assistant. Use web search to find "
-        "accurate, current information only about cooperative laws, government schemes, PACS services, crop insurance schemes, financial literacy, grievance redressal mechanisms, cooperative governance, legal provisions, member services, and related things for rural farmers and stakeholders in India whenever it would improve your "
-        "answer - for facts, prices, schedules, news, or anything that "
-        "could have changed or that you're not certain about - then "
-        "answer the question directly using what you find. "
-        "Keep answers short, clear, and practical in simple language - "
-        "2 to 5 sentences unless the question needs a list. "
-        "No markdown symbols, no emojis, and don't narrate that you "
-        "searched or list sources/links inline - just give the answer "
-        "itself, in plain spoken language, since this may be read aloud."
+        "You are a helpful assistant for members of cooperative societies. "
+        "Answer questions about cooperative governance, legal provisions, "
+        "government schemes, and member services. "
+        "The complete reference document is provided below in full - read "
+        "all of it carefully before answering, since the relevant answer "
+        "may be anywhere in it, not just near matching keywords. "
+        "Base your answer only on this reference material; only say it "
+        "doesn't cover the question if you've genuinely checked the whole "
+        "document and the topic really isn't addressed anywhere in it - "
+        "in that case say so plainly and give general, cautious guidance. "
+        "Keep answers short, clear, and practical in simple language - 2 to 5 sentences unless "
+        "the question needs a list. No markdown symbols, no emojis."
     )
 
     hist_ctx = ""
@@ -531,32 +445,24 @@ def answer_query(question_en, history=None):
             for m in recent
         )
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Question: {question_en}{hist_ctx}"},
-    ]
+    user_prompt = (
+        f"Reference document (full text):\n{context}\n\n"
+        f"Question: {question_en}{hist_ctx}"
+    )
 
     try:
         resp = _groq_client.chat.completions.create(
-            model=SEARCH_MODEL,
+            model=CHAT_MODEL,
             max_tokens=400,
             temperature=0.3,
-            messages=messages,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
         )
         return resp.choices[0].message.content.strip()
     except Exception as e:
-        print(f"[modl] WARNING: web-search model ({SEARCH_MODEL}) failed: {e}; "
-              f"falling back to {CHAT_MODEL} without live web search.")
-        try:
-            resp = _groq_client.chat.completions.create(
-                model=CHAT_MODEL,
-                max_tokens=400,
-                temperature=0.3,
-                messages=messages,
-            )
-            return resp.choices[0].message.content.strip()
-        except Exception as e2:
-            return f"Sorry, something went wrong while generating a response: {e2}"
+        return f"Sorry, something went wrong while generating a response: {e}"
 
 
 def translate_text(text, target_lang_code):
