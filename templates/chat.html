@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>26088</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -18,6 +18,16 @@
     --error:#dc2626;
     --rec:#ef4444;
   }
+  :root[data-theme="dark"]{
+    --bg:#0f172a; --card:#1e293b; --border:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --sky-light:#0c2f45;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f172a; --card:#1e293b; --border:#334155;
+      --text:#e2e8f0; --muted:#94a3b8; --sky-light:#0c2f45;
+    }
+  }
   html,body{
     height:100%;
     background:var(--bg);
@@ -27,9 +37,11 @@
     overflow:hidden;
   }
   .app{
-    height:100vh;
+    height:100%;
     display:flex;
     flex-direction:column;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
   }
 
   /* header */
@@ -37,36 +49,45 @@
     display:flex;
     align-items:center;
     justify-content:space-between;
-    padding:12px 18px;
+    padding:12px 16px;
     background:var(--card);
     border-bottom:1px solid var(--border);
     flex-shrink:0;
+    gap:10px;
+    flex-wrap:wrap;
   }
   .brand{ display:flex; align-items:center; gap:10px; }
-  .brand img{ width:96px; height:96px; object-fit:contain; }
-  .brand span{ font-size:1.15rem; font-weight:700; color:var(--sky-dark); }
-  .header-actions{ display:flex; align-items:center; gap:14px; }
-  .header-actions button{
+  .brand img{ width:40px; height:40px; object-fit:contain; }
+  .brand span{ font-size:1.2rem; font-weight:700; color:var(--sky-dark); }
+  .header-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .header-actions button, .header-actions a{
     background:none;
     border:1px solid var(--border);
     color:var(--muted);
-    font-size:0.82rem;
-    padding:7px 12px;
+    font-size:0.78rem;
+    padding:6px 10px;
     border-radius:7px;
     cursor:pointer;
+    text-decoration:none;
+    white-space:nowrap;
   }
-  .header-actions button:hover{ border-color:var(--sky); color:var(--sky-dark); }
+  .header-actions button:hover, .header-actions a:hover{ border-color:var(--sky); color:var(--sky-dark); }
+  #answerModeBtn.mode-document{
+    border-color:var(--sky);
+    color:var(--sky-dark);
+    background:var(--sky-light);
+  }
 
   /* messages */
   main{
     flex:1;
     overflow-y:auto;
-    padding:18px 14px 10px;
+    padding:16px 12px 8px;
   }
-  .msg-row{ display:flex; margin-bottom:14px; }
+  .msg-row{ display:flex; margin-bottom:12px; }
   .msg-row.user{ justify-content:flex-end; }
   .bubble{
-    max-width:78%;
+    max-width:80%;
     padding:11px 15px;
     border-radius:14px;
     font-size:0.96rem;
@@ -85,23 +106,19 @@
     border:1px solid var(--border);
     border-bottom-left-radius:4px;
   }
-  .src-tag{
-    display:inline-block;
-    margin-left:8px;
-    font-size:0.68rem;
-    font-weight:700;
-    letter-spacing:0.03em;
-    text-transform:uppercase;
+  .replay-btn{
+    display:block;
+    margin-top:8px;
+    background:none;
+    border:1px solid var(--border);
     color:var(--sky-dark);
-    background:var(--sky-light);
-    border-radius:5px;
-    padding:1px 6px;
-    vertical-align:middle;
+    font-size:0.76rem;
+    font-weight:600;
+    padding:4px 10px;
+    border-radius:6px;
+    cursor:pointer;
   }
-  .msg-row.user .bubble .src-tag{
-    color:#fff;
-    background:rgba(255,255,255,0.25);
-  }
+  .replay-btn:hover{ background:var(--sky-light); }
   .empty-state{
     text-align:center;
     color:var(--muted);
@@ -116,7 +133,7 @@
     flex-shrink:0;
     background:var(--card);
     border-top:1px solid var(--border);
-    padding:12px 14px;
+    padding:10px 14px;
   }
   .status-line{
     text-align:center;
@@ -135,8 +152,8 @@
     gap:12px;
   }
   #micBtn{
-    width:64px;
-    height:64px;
+    width:60px;
+    height:60px;
     border-radius:50%;
     border:none;
     background:var(--sky);
@@ -149,15 +166,16 @@
     transition:transform .1s, background .15s;
     user-select:none;
     touch-action:none;
+    flex-shrink:0;
   }
-  #micBtn svg{ width:26px; height:26px; }
+  #micBtn svg{ width:24px; height:24px; }
   #micBtn.active{
     background:var(--rec);
     transform:scale(1.08);
     box-shadow:0 3px 14px rgba(239,68,68,0.4);
   }
   .mic-hint{
-    font-size:0.78rem;
+    font-size:0.76rem;
     color:var(--muted);
     text-align:center;
     margin-top:8px;
@@ -166,15 +184,18 @@
   .text-row{
     display:flex;
     gap:8px;
-    margin-top:12px;
+    margin-top:10px;
   }
   .text-row input{
     flex:1;
+    min-width:0;
     padding:10px 13px;
     font-size:0.95rem;
-    border:1px solid #cbd5e1;
+    border:1px solid var(--border);
     border-radius:8px;
     outline:none;
+    background:var(--bg);
+    color:var(--text);
   }
   .text-row input:focus{
     border-color:var(--sky);
@@ -189,23 +210,28 @@
     font-size:0.9rem;
     font-weight:600;
     cursor:pointer;
+    flex-shrink:0;
   }
   .text-row button:hover{ background:var(--sky-dark); }
 
   footer{
     text-align:center;
-    padding:8px;
-    font-size:0.74rem;
+    padding:6px;
+    font-size:0.72rem;
     color:var(--muted);
     background:var(--card);
     border-top:1px solid var(--border);
     flex-shrink:0;
+    padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));
   }
 
   @media (max-width:480px){
+    header{ padding:10px 12px; }
     .brand span{ font-size:1.05rem; }
-    .bubble{ max-width:86%; font-size:0.92rem; }
-    #micBtn{ width:58px; height:58px; }
+    .brand img{ width:34px; height:34px; }
+    .bubble{ max-width:88%; font-size:0.92rem; }
+    #micBtn{ width:56px; height:56px; }
+    .header-actions button, .header-actions a{ font-size:0.72rem; padding:5px 8px; }
   }
 </style>
 </head>
@@ -217,24 +243,23 @@
       <span>26088</span>
     </div>
     <div class="header-actions">
+      <button id="themeToggle" type="button">🌙</button>
+      <button id="answerModeBtn" type="button" title="Toggle between web search and the local knowledge document">Web search</button>
       <button id="clearBtn" type="button">Clear</button>
     </div>
   </header>
 
-  <main id="chatMain" data-last-id="{{ messages[-1].id if messages else 0 }}">
+  <main id="chatMain">
     {% if not messages %}
     <div class="empty-state" id="emptyState">
-      Hold the microphone button, or press and hold the S key, to ask about
-      cooperative governance, legal provisions, schemes, and member services.
-      Release to send. Speak in any language.
+      Hold the microphone button, or press and hold the S key, to ask a
+      question. Release to send. Speak in English or any supported Indian
+      language - the reply is spoken back in the same language.
     </div>
     {% endif %}
     {% for m in messages %}
       <div class="msg-row {{ 'user' if m.role == 'user' else 'assistant' }}">
-        <div class="bubble">
-          {{ m.text }}
-          {% if m.source == 'esp32' %}<span class="src-tag">device</span>{% endif %}
-        </div>
+        <div class="bubble">{{ m.text }}</div>
       </div>
     {% endfor %}
   </main>
@@ -259,30 +284,53 @@
     </form>
   </div>
 
-  <footer>by Arya</footer>
+  <footer>by Team Arya</footer>
 </div>
 
 <script>
-const chatMain   = document.getElementById('chatMain');
-const emptyState = document.getElementById('emptyState');
-const micBtn     = document.getElementById('micBtn');
-const statusLine = document.getElementById('statusLine');
-const textForm   = document.getElementById('textForm');
-const textInput  = document.getElementById('textInput');
-const clearBtn   = document.getElementById('clearBtn');
+const chatMain      = document.getElementById('chatMain');
+const emptyState    = document.getElementById('emptyState');
+const micBtn        = document.getElementById('micBtn');
+const statusLine    = document.getElementById('statusLine');
+const textForm      = document.getElementById('textForm');
+const textInput     = document.getElementById('textInput');
+const clearBtn      = document.getElementById('clearBtn');
+const answerModeBtn = document.getElementById('answerModeBtn');
+const themeToggle   = document.getElementById('themeToggle');
 
-function addBubble(role, text, source) {
+/* ---------------- dark mode ---------------- */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  themeToggle.textContent = t === 'dark' ? '☀️' : '🌙';
+}
+applyTheme(localStorage.getItem('theme') ||
+  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+themeToggle.addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+});
+
+function addBubble(role, text, lang, audioUrl) {
   if (emptyState) emptyState.remove();
   const row = document.createElement('div');
   row.className = 'msg-row ' + role;
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
+  bubble.dataset.lang = lang || 'en-IN';
+  bubble.dataset.audioUrl = audioUrl || '';
   bubble.appendChild(document.createTextNode(text));
-  if (source === 'esp32') {
-    const tag = document.createElement('span');
-    tag.className = 'src-tag';
-    tag.textContent = 'device';
-    bubble.appendChild(tag);
+  if (role === 'assistant' && text) {
+    const replayBtn = document.createElement('button');
+    replayBtn.type = 'button';
+    replayBtn.className = 'replay-btn';
+    replayBtn.setAttribute('aria-label', 'Play this answer aloud');
+    replayBtn.textContent = '\u25B6 Play';
+    // Manual fallback: also covers browsers (notably iOS Safari) that
+    // only allow audio playback triggered directly inside a user-gesture
+    // handler.
+    replayBtn.addEventListener('click', () => playAnswer(bubble.dataset.audioUrl, text, bubble.dataset.lang));
+    bubble.appendChild(replayBtn);
   }
   row.appendChild(bubble);
   chatMain.appendChild(row);
@@ -295,12 +343,50 @@ function setStatus(text, kind) {
   statusLine.className = 'status-line' + (kind ? ' ' + kind : '');
 }
 
-function speak(text, lang) {
-  if (!('speechSynthesis' in window) || !text) return;
+// Chrome/Edge/Firefox load the voice list asynchronously; calling
+// speakBrowser() before it's ready can silently produce no audio on the
+// very first try.
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+}
+
+// Last-resort fallback ONLY: reads text with whatever voice the browser
+// has installed for `lang`. Most browsers/OSes don't ship an installed
+// voice for languages like Telugu, Tamil, Bengali, etc. and silently
+// substitute a default voice (usually English) instead of actually
+// failing - so this only gets used when the server couldn't produce real
+// audio in the correct language (see playAnswer() below), which is by
+// far the more reliable path.
+function speakBrowser(text, lang) {
+  if (!('speechSynthesis' in window) || !text) {
+    if (!('speechSynthesis' in window)) {
+      setStatus('This browser cannot speak answers aloud - use the Play button instead.', 'error');
+    }
+    return;
+  }
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = lang || 'en-IN';
+  utter.onerror = () => setStatus('Could not play audio - try the Play button on the answer.', 'error');
   window.speechSynthesis.speak(utter);
+}
+
+// Plays the server-generated audio (real Bhashini/espeak-ng/Groq TTS audio,
+// actually spoken in the input language) when available; only falls back
+// to the browser's own speechSynthesis if the server couldn't produce
+// audio at all (e.g. no TTS backend configured).
+function playAnswer(audioUrl, text, lang) {
+  if (!audioUrl) {
+    speakBrowser(text, lang);
+    return;
+  }
+  const audio = new Audio(audioUrl);
+  audio.play().catch(() => {
+    // Autoplay blocked by the browser, or the file failed to load -
+    // fall back so the person still hears *something*.
+    speakBrowser(text, lang);
+  });
 }
 
 /* ---------------- text fallback ---------------- */
@@ -319,9 +405,10 @@ textForm.addEventListener('submit', async (e) => {
     });
     const data = await res.json();
     if (data.ok) {
-      addBubble('assistant', data.answer);
-      if (data.last_id) lastMessageId = Math.max(lastMessageId, data.last_id);
-      speak(data.answer, data.speech_lang);
+      addBubble('assistant', data.answer, data.speech_lang, data.audio_url);
+      // Plays immediately - triggered right here, in the same handler
+      // that sent the question, so no separate tap is needed.
+      playAnswer(data.audio_url, data.answer, data.speech_lang);
       setStatus('Hold the button or the S key to speak');
     } else {
       setStatus(data.error || 'Something went wrong.', 'error');
@@ -337,32 +424,37 @@ clearBtn.addEventListener('click', async () => {
   window.location.reload();
 });
 
-/* ---------------- poll for messages from the ESP32 device ----------------
-   The browser and the physical device share one conversation. Whenever the
-   device asks a question with its own microphone, this poll picks up both
-   the question and its answer and drops them into the chat here too. */
-let lastMessageId = parseInt(chatMain.dataset.lastId || '0', 10) || 0;
-let pollInFlight = false;
-
-async function pollMessages() {
-  if (pollInFlight) return;
-  pollInFlight = true;
-  try {
-    const res = await fetch('/api/messages?after_id=' + lastMessageId);
-    const data = await res.json();
-    if (data.ok && data.messages && data.messages.length) {
-      for (const m of data.messages) {
-        addBubble(m.role === 'user' ? 'user' : 'assistant', m.text, m.source);
-        lastMessageId = Math.max(lastMessageId, m.id);
-      }
-    }
-  } catch (err) {
-    // Silently ignore - the next poll will retry.
-  } finally {
-    pollInFlight = false;
-  }
+/* ---------------- answer mode toggle (web search vs local document) ---- */
+function renderAnswerMode(mode) {
+  const isDocument = mode === 'document';
+  answerModeBtn.textContent = isDocument ? 'Knowledge doc' : 'Web search';
+  answerModeBtn.classList.toggle('mode-document', isDocument);
+  answerModeBtn.dataset.mode = mode;
 }
-setInterval(pollMessages, 3000);
+
+async function loadAnswerMode() {
+  try {
+    const res = await fetch('/api/settings/answer_mode');
+    const data = await res.json();
+    if (data.ok) renderAnswerMode(data.mode);
+  } catch (err) { /* keep default label */ }
+}
+loadAnswerMode();
+
+answerModeBtn.addEventListener('click', async () => {
+  const nextMode = answerModeBtn.dataset.mode === 'document' ? 'web' : 'document';
+  answerModeBtn.disabled = true;
+  try {
+    const res = await fetch('/api/settings/answer_mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: nextMode }),
+    });
+    const data = await res.json();
+    if (data.ok) renderAnswerMode(data.mode);
+  } catch (err) { /* ignore */ }
+  finally { answerModeBtn.disabled = false; }
+});
 
 /* ---------------- push-to-talk voice recording ---------------- */
 let mediaRecorder = null;
@@ -428,9 +520,12 @@ async function onRecordingStop() {
     const data = await res.json();
     if (data.ok) {
       addBubble('user', data.user_text);
-      addBubble('assistant', data.answer);
-      if (data.last_id) lastMessageId = Math.max(lastMessageId, data.last_id);
-      speak(data.answer, data.speech_lang);
+      addBubble('assistant', data.answer, data.speech_lang, data.audio_url);
+      // Immediate playback - no extra tap required. Uses the real
+      // server-generated audio (in the input language) when available,
+      // so a Telugu question gets an actual Telugu voice back instead of
+      // silently falling back to whatever default voice the browser has.
+      playAnswer(data.audio_url, data.answer, data.speech_lang);
       setStatus('Hold the button or the S key to speak');
     } else {
       setStatus(data.error || 'Could not process the recording.', 'error');
