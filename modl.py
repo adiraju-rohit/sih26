@@ -655,6 +655,11 @@ def espeak_available():
 
 
 def espeak_voice_for_lang(lang_code):
+    """Picks the espeak-ng voice for `lang_code` - always the language the
+    speaker actually used (detected by Whisper on input, or explicitly
+    passed through the ESP32/browser flow), never a fixed default. Falls
+    back to English only if `lang_code` isn't one of the 10 supported
+    languages (see _clamp_lang)."""
     return ESPEAK_VOICE_MAP.get(_clamp_lang(lang_code), "en-us")
 
 
