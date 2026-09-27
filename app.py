@@ -10,15 +10,27 @@ import modl
 
 load_dotenv()
 
-app = Flask(__name__)
+# Absolute path to this file's directory, used for template_folder /
+# static_folder below instead of Flask's default (relative to the
+# current working directory) - on some serverless platforms the process's
+# cwd at request time isn't guaranteed to be this directory, which can
+# otherwise cause "TemplateNotFound" errors even though the files were
+# deployed correctly.
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(_APP_DIR, "templates"),
+    static_folder=os.path.join(_APP_DIR, "static"),
+)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "26088-dev-secret")
 
 # Vercel's serverless functions can only write to /tmp.
 _ON_VERCEL = bool(os.environ.get("VERCEL"))
-_BASE_DIR = tempfile.gettempdir() if _ON_VERCEL else "."
-UPLOAD_DIR = os.path.join(_BASE_DIR, "uploads")
-ESP_AUDIO_DIR = os.path.join(_BASE_DIR, "esp_audio")
-WEB_AUDIO_DIR = os.path.join(_BASE_DIR, "web_audio")
+_TMP_BASE_DIR = tempfile.gettempdir() if _ON_VERCEL else "."
+UPLOAD_DIR = os.path.join(_TMP_BASE_DIR, "uploads")
+ESP_AUDIO_DIR = os.path.join(_TMP_BASE_DIR, "esp_audio")
+WEB_AUDIO_DIR = os.path.join(_TMP_BASE_DIR, "web_audio")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(ESP_AUDIO_DIR, exist_ok=True)
 os.makedirs(WEB_AUDIO_DIR, exist_ok=True)
