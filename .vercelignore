@@ -1,8 +1,0 @@
-app.db
-uploads/
-esp_audio/
-__pycache__/
-*.pyc
-venv/
-firmware/
-.env
