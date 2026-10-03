@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>26088</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root{
+    --sky:#0ea5e9;
+    --sky-dark:#0284c7;
+    --sky-light:#e0f2fe;
+    --bg:#f8fafc;
+    --card:#ffffff;
+    --border:#dbeafe;
+    --text:#1e293b;
+    --muted:#64748b;
+    --error:#dc2626;
+    --rec:#ef4444;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f172a; --card:#1e293b; --border:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --sky-light:#0c2f45;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f172a; --card:#1e293b; --border:#334155;
+      --text:#e2e8f0; --muted:#94a3b8; --sky-light:#0c2f45;
+    }
+  }
+  html,body{
+    height:100%;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px;
+    overflow:hidden;
+  }
+  .app{
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+
+  /* header */
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 16px;
+    background:var(--card);
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand img{ width:40px; height:40px; object-fit:contain; }
+  .brand span{ font-size:1.2rem; font-weight:700; color:var(--sky-dark); }
+  .header-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .header-actions button, .header-actions a{
+    background:none;
+    border:1px solid var(--border);
+    color:var(--muted);
+    font-size:0.78rem;
+    padding:6px 10px;
+    border-radius:7px;
+    cursor:pointer;
+    text-decoration:none;
+    white-space:nowrap;
+  }
+  .header-actions button:hover, .header-actions a:hover{ border-color:var(--sky); color:var(--sky-dark); }
+  #answerModeBtn.mode-document{
+    border-color:var(--sky);
+    color:var(--sky-dark);
+    background:var(--sky-light);
+  }
+
+  /* messages */
+  main{
+    flex:1;
+    overflow-y:auto;
+    padding:16px 12px 8px;
+  }
+  .msg-row{ display:flex; margin-bottom:12px; }
+  .msg-row.user{ justify-content:flex-end; }
+  .bubble{
+    max-width:80%;
+    padding:11px 15px;
+    border-radius:14px;
+    font-size:0.96rem;
+    line-height:1.45;
+    white-space:pre-wrap;
+    word-wrap:break-word;
+  }
+  .msg-row.user .bubble{
+    background:var(--sky);
+    color:#fff;
+    border-bottom-right-radius:4px;
+  }
+  .msg-row.assistant .bubble{
+    background:var(--card);
+    color:var(--text);
+    border:1px solid var(--border);
+    border-bottom-left-radius:4px;
+  }
+  .replay-btn{
+    display:block;
+    margin-top:8px;
+    background:none;
+    border:1px solid var(--border);
+    color:var(--sky-dark);
+    font-size:0.76rem;
+    font-weight:600;
+    padding:4px 10px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .replay-btn:hover{ background:var(--sky-light); }
+  .empty-state{
+    text-align:center;
+    color:var(--muted);
+    font-size:0.92rem;
+    margin-top:40px;
+    padding:0 20px;
+    line-height:1.6;
+  }
+
+  /* input / controls */
+  .controls{
+    flex-shrink:0;
+    background:var(--card);
+    border-top:1px solid var(--border);
+    padding:10px 14px;
+  }
+  .status-line{
+    text-align:center;
+    font-size:0.82rem;
+    color:var(--muted);
+    min-height:18px;
+    margin-bottom:8px;
+  }
+  .status-line.recording{ color:var(--rec); font-weight:600; }
+  .status-line.error{ color:var(--error); }
+
+  .mic-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+  }
+  #micBtn{
+    width:60px;
+    height:60px;
+    border-radius:50%;
+    border:none;
+    background:var(--sky);
+    color:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    box-shadow:0 3px 10px rgba(14,165,233,0.35);
+    transition:transform .1s, background .15s;
+    user-select:none;
+    touch-action:none;
+    flex-shrink:0;
+  }
+  #micBtn svg{ width:24px; height:24px; }
+  #micBtn.active{
+    background:var(--rec);
+    transform:scale(1.08);
+    box-shadow:0 3px 14px rgba(239,68,68,0.4);
+  }
+  .mic-hint{
+    font-size:0.76rem;
+    color:var(--muted);
+    text-align:center;
+    margin-top:8px;
+  }
+
+  .text-row{
+    display:flex;
+    gap:8px;
+    margin-top:10px;
+  }
+  .text-row input{
+    flex:1;
+    min-width:0;
+    padding:10px 13px;
+    font-size:0.95rem;
+    border:1px solid var(--border);
+    border-radius:8px;
+    outline:none;
+    background:var(--bg);
+    color:var(--text);
+  }
+  .text-row input:focus{
+    border-color:var(--sky);
+    box-shadow:0 0 0 3px rgba(14,165,233,0.15);
+  }
+  .text-row button{
+    padding:10px 16px;
+    background:var(--sky);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    font-size:0.9rem;
+    font-weight:600;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .text-row button:hover{ background:var(--sky-dark); }
+
+  footer{
+    text-align:center;
+    padding:6px;
+    font-size:0.72rem;
+    color:var(--muted);
+    background:var(--card);
+    border-top:1px solid var(--border);
+    flex-shrink:0;
+    padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));
+  }
+
+  @media (max-width:480px){
+    header{ padding:10px 12px; }
+    .brand span{ font-size:1.05rem; }
+    .brand img{ width:34px; height:34px; }
+    .bubble{ max-width:88%; font-size:0.92rem; }
+    #micBtn{ width:56px; height:56px; }
+    .header-actions button, .header-actions a{ font-size:0.72rem; padding:5px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="26088 logo">
+      <span>26088</span>
+    </div>
+    <div class="header-actions">
+      <button id="themeToggle" type="button">🌙</button>
+      <button id="answerModeBtn" type="button" title="Toggle between web search and the local knowledge document">Web search</button>
+      <button id="clearBtn" type="button">Clear</button>
+    </div>
+  </header>
+
+  <main id="chatMain">
+    {% if not messages %}
+    <div class="empty-state" id="emptyState">
+      Hold the microphone button, or press and hold the S key, to ask a
+      question. Release to send. Speak in English or any supported Indian
+      language - the reply is spoken back in the same language.
+    </div>
+    {% endif %}
+    {% for m in messages %}
+      <div class="msg-row {{ 'user' if m.role == 'user' else 'assistant' }}">
+        <div class="bubble">{{ m.text }}</div>
+      </div>
+    {% endfor %}
+  </main>
+
+  <div class="controls">
+    <div class="status-line" id="statusLine">Hold the button or the S key to speak</div>
+    <div class="mic-row">
+      <button id="micBtn" type="button" aria-label="Hold to speak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="mic-hint">Voice and text input work in English and the supported Indian languages. Your words are shown exactly as spoken or typed.</div>
+
+    <form class="text-row" id="textForm">
+      <input type="text" id="textInput" placeholder="Or type a question in any supported language" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <footer>by Team Arya</footer>
+</div>
+
+<script>
+const chatMain      = document.getElementById('chatMain');
+const emptyState    = document.getElementById('emptyState');
+const micBtn        = document.getElementById('micBtn');
+const statusLine    = document.getElementById('statusLine');
+const textForm      = document.getElementById('textForm');
+const textInput     = document.getElementById('textInput');
+const clearBtn      = document.getElementById('clearBtn');
+const answerModeBtn = document.getElementById('answerModeBtn');
+const themeToggle   = document.getElementById('themeToggle');
+
+/* ---------------- dark mode ---------------- */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  themeToggle.textContent = t === 'dark' ? '☀️' : '🌙';
+}
+applyTheme(localStorage.getItem('theme') ||
+  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+themeToggle.addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('theme', next);
+  applyTheme(next);
+});
+
+function addBubble(role, text, lang, audioUrl) {
+  if (emptyState) emptyState.remove();
+  const row = document.createElement('div');
+  row.className = 'msg-row ' + role;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.dataset.lang = lang || 'en-IN';
+  if (lang) bubble.lang = lang;
+  bubble.dataset.audioUrl = audioUrl || '';
+  bubble.appendChild(document.createTextNode(text));
+  if (role === 'assistant' && text) {
+    const replayBtn = document.createElement('button');
+    replayBtn.type = 'button';
+    replayBtn.className = 'replay-btn';
+    replayBtn.setAttribute('aria-label', 'Play this answer aloud');
+    replayBtn.textContent = '\u25B6 Play';
+    // Manual fallback: also covers browsers (notably iOS Safari) that
+    // only allow audio playback triggered directly inside a user-gesture
+    // handler.
+    replayBtn.addEventListener('click', () => playAnswer(bubble.dataset.audioUrl, text, bubble.dataset.lang));
+    bubble.appendChild(replayBtn);
+  }
+  row.appendChild(bubble);
+  chatMain.appendChild(row);
+  chatMain.scrollTop = chatMain.scrollHeight;
+  return bubble;
+}
+
+function setStatus(text, kind) {
+  statusLine.textContent = text;
+  statusLine.className = 'status-line' + (kind ? ' ' + kind : '');
+}
+
+// Chrome/Edge/Firefox load the voice list asynchronously; calling
+// speakBrowser() before it's ready can silently produce no audio on the
+// very first try.
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+}
+
+// Last-resort fallback ONLY: reads text with whatever voice the browser
+// has installed for `lang`. Most browsers/OSes don't ship an installed
+// voice for languages like Telugu, Tamil, Bengali, etc. and silently
+// substitute a default voice (usually English) instead of actually
+// failing - so this only gets used when the server couldn't produce real
+// audio in the correct language (see playAnswer() below), which is by
+// far the more reliable path.
+function speakBrowser(text, lang) {
+  if (!('speechSynthesis' in window) || !text) {
+    if (!('speechSynthesis' in window)) {
+      setStatus('This browser cannot speak answers aloud - use the Play button instead.', 'error');
+    }
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang || 'en-IN';
+  utter.onerror = () => setStatus('Could not play audio - try the Play button on the answer.', 'error');
+  window.speechSynthesis.speak(utter);
+}
+
+// Plays the server-generated audio (real Bhashini/espeak-ng/Groq TTS audio,
+// actually spoken in the input language) when available; only falls back
+// to the browser's own speechSynthesis if the server couldn't produce
+// audio at all (e.g. no TTS backend configured).
+function playAnswer(audioUrl, text, lang) {
+  if (!audioUrl) {
+    speakBrowser(text, lang);
+    return;
+  }
+  const audio = new Audio(audioUrl);
+  audio.play().catch(() => {
+    // Autoplay blocked by the browser, or the file failed to load -
+    // fall back so the person still hears *something*.
+    speakBrowser(text, lang);
+  });
+}
+
+/* ---------------- text fallback ---------------- */
+textForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = textInput.value.trim();
+  if (!text) return;
+  textInput.value = '';
+  addBubble('user', text);
+  setStatus('Thinking...');
+  try {
+    const res = await fetch('/api/text_message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      addBubble('assistant', data.answer, data.speech_lang, data.audio_url);
+      // Plays immediately - triggered right here, in the same handler
+      // that sent the question, so no separate tap is needed.
+      playAnswer(data.audio_url, data.answer, data.speech_lang);
+      setStatus('Hold the button or the S key to speak');
+    } else {
+      setStatus(data.error || 'Something went wrong.', 'error');
+    }
+  } catch (err) {
+    setStatus('Network error. Please try again.', 'error');
+  }
+});
+
+/* ---------------- clear ---------------- */
+clearBtn.addEventListener('click', async () => {
+  await fetch('/api/clear', { method: 'POST' });
+  window.location.reload();
+});
+
+/* ---------------- answer mode toggle (web search vs local document) ---- */
+function renderAnswerMode(mode) {
+  const isDocument = mode === 'document';
+  answerModeBtn.textContent = isDocument ? 'Knowledge doc' : 'Web search';
+  answerModeBtn.classList.toggle('mode-document', isDocument);
+  answerModeBtn.dataset.mode = mode;
+}
+
+async function loadAnswerMode() {
+  try {
+    const res = await fetch('/api/settings/answer_mode');
+    const data = await res.json();
+    if (data.ok) renderAnswerMode(data.mode);
+  } catch (err) { /* keep default label */ }
+}
+loadAnswerMode();
+
+answerModeBtn.addEventListener('click', async () => {
+  const nextMode = answerModeBtn.dataset.mode === 'document' ? 'web' : 'document';
+  answerModeBtn.disabled = true;
+  try {
+    const res = await fetch('/api/settings/answer_mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: nextMode }),
+    });
+    const data = await res.json();
+    if (data.ok) renderAnswerMode(data.mode);
+  } catch (err) { /* ignore */ }
+  finally { answerModeBtn.disabled = false; }
+});
+
+/* ---------------- push-to-talk voice recording ---------------- */
+let mediaRecorder = null;
+let audioChunks = [];
+let recording = false;
+let stream = null;
+
+async function startRecording() {
+  if (recording) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus('Microphone is not supported on this device.', 'error');
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    setStatus('Microphone permission was denied.', 'error');
+    return;
+  }
+  audioChunks = [];
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+  mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = onRecordingStop;
+  mediaRecorder.start();
+  recording = true;
+  micBtn.classList.add('active');
+  setStatus('Listening... release to send', 'recording');
+}
+
+function stopRecording() {
+  if (!recording) return;
+  recording = false;
+  micBtn.classList.remove('active');
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+}
+
+/* Bhashini's speech recognition can't read the browser's WebM/Opus
+   recordings, so convert the clip to 16 kHz mono 16-bit WAV right here. */
+async function blobToWav16k(blob) {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  const ctx = new Ctx();
+  let decoded;
+  try {
+    decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+  } finally {
+    if (ctx.close) ctx.close();
+  }
+  const rate = 16000;
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const samples = (await off.startRendering()).getChannelData(0);
+
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+async function onRecordingStop() {
+  if (!audioChunks.length) {
+    setStatus('Hold the button or the S key to speak');
+    return;
+  }
+  const blob = new Blob(audioChunks, { type: audioChunks[0].type || 'audio/webm' });
+  audioChunks = [];
+
+  if (blob.size < 800) {
+    setStatus('Recording was too short. Try again.', 'error');
+    return;
+  }
+
+  setStatus('Processing speech...');
+  const formData = new FormData();
+  let uploadBlob = blob, uploadName = 'speech.webm';
+  try {
+    uploadBlob = await blobToWav16k(blob);
+    uploadName = 'speech.wav';
+  } catch (e) {
+    console.warn('WAV conversion failed, uploading original recording:', e);
+  }
+  formData.append('audio', uploadBlob, uploadName);
+
+  try {
+    const res = await fetch('/api/voice_message', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.ok) {
+      addBubble('user', data.user_text, data.speech_lang);
+      addBubble('assistant', data.answer, data.speech_lang, data.audio_url);
+      // Immediate playback - no extra tap required. Uses the real
+      // server-generated audio (in the input language) when available,
+      // so a Telugu question gets an actual Telugu voice back instead of
+      // silently falling back to whatever default voice the browser has.
+      playAnswer(data.audio_url, data.answer, data.speech_lang);
+      setStatus('Hold the button or the S key to speak');
+    } else {
+      setStatus(data.error || 'Could not process the recording.', 'error');
+    }
+  } catch (err) {
+    setStatus('Network error. Please try again.', 'error');
+  }
+}
+
+/* mouse / touch on the mic button */
+micBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startRecording(); });
+micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); }, { passive: false });
+['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(evt => {
+  micBtn.addEventListener(evt, (e) => { e.preventDefault(); stopRecording(); });
+});
+
+/* hold the S key */
+let sKeyDown = false;
+window.addEventListener('keydown', (e) => {
+  if ((e.key === 's' || e.key === 'S') && !sKeyDown && document.activeElement !== textInput) {
+    sKeyDown = true;
+    startRecording();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === 's' || e.key === 'S') {
+    sKeyDown = false;
+    stopRecording();
+  }
+});
+
+chatMain.scrollTop = chatMain.scrollHeight;
+</script>
+</body>
+</html>
